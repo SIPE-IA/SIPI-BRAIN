@@ -21,7 +21,7 @@ JSON tipado mediante serde en la API y DTO TypeScript en el cliente. El navegado
 | `GET /api/session` | Cookie de sesión | Estado propio, incluso prelogin | Usuario actual o null y token CSRF; sin valores secretos |
 | `POST /api/login`, `POST /api/logout` | Credenciales o sesión, CSRF y Origin | Usuario activo / sesión válida | Login con rotación o logout con invalidación; fallo genérico sin eco de contraseña |
 | `GET /api/wikis` | Sesión | Autenticado | Solo wikis asignadas, sin títulos/conteos de wikis ajenas |
-| `GET /api/wikis/{wiki_id}/records` | Texto, agente o cliente, paginación | Asignación | Índice y resultados del ámbito; ausencia explícita |
+| `GET /api/wikis/{wiki_id}/records` | `q`, `agent_id`, `client_id`, `project_id` opcionales; `offset`, `limit` | Asignación antes de consultar | Índice de todos los tipos; filtros combinables y ausencia explícita. Sin `project_id` conserva el ámbito anterior; un proyecto sin registros accesibles no revela su existencia |
 | `GET /api/wikis/{wiki_id}/records/{record_id}` | Identificadores | Asignación y pertenencia record/wiki | Contenido, proyecto/cliente, origen, referencias, revisión y estado |
 | `POST /api/wikis/{wiki_id}/sources` | Fuente seleccionada y contexto | Asignación | Fuente original inmutable; no actualización encubierta de fuente ajena |
 | `POST /api/wikis/{wiki_id}/records` | Tipo, título, contenido, proyecto, referencias y submission_id | Asignación | Registro; RFD exige proyecto, no plantilla documental arbitraria |
@@ -71,3 +71,35 @@ El wrapper de la API Windows controla tamaños, errores, propiedad de buffers y 
 El futuro binario `sipibrain` expondrá `init-db`, `bootstrap-admin`, `create-user --username <nombre>`, `seed-pilot --synthetic` y `serve`. Contraseñas de bootstrap/usuario se leen interactivamente, nunca en argumentos. Sembrar datos no crea contraseñas conocidas ni sobrescribe aportaciones existentes. Flags de servicio: `--bind` loopback y `--static-dir` del bundle compilado.
 
 Estos son contratos propuestos, no comandos existentes. Cargo compila/prueba el backend; npm/Vite compilan el frontend. La [guía](../quickstart.md) distingue futuras ejecuciones de resultados comprobados.
+
+## Contrato JSON del MVP (T003)
+
+Este apartado fija la interfaz de T001–T028 antes de implementarla. No habilita secretos, intercambio entre agentes ni la historia de búsqueda avanzada (T029 en adelante). Identificadores y fechas UTC son strings; datos ausentes usan `null`; colecciones usan `{ "items": [...] }`. Un error usa `{ "code": "...", "message": "..." }`, con mensaje fijo no derivado de la entrada. Desconocidos o inaccesibles son indistinguibles.
+
+| DTO / operación | Forma |
+|---|---|
+| `User` / sesión | Usuario `{id, username, role: "admin" \| "programmer"}`. Sesión `{user: User \| null, csrf_token}`. Login recibe `{username,password}` y devuelve sesión rotada; logout devuelve sesión anónima nueva con token vigente |
+| Wiki | `{id, agent_id, name}`; listado solo de asignadas |
+| Administrar asignaciones | GET devuelve `{users: User[], wikis: Wiki[], items: [{user_id,wiki_id}]}` sin cuerpos de conocimiento. POST `{user_id,wiki_id,action: "grant" \| "revoke"}` devuelve `{user_id,wiki_id,assigned: boolean}` |
+| Crear fuente | POST `{body,origin_kind,origin_ref,project_id?: string \| null}` devuelve `{id,wiki_id,body,content_hash,origin_kind,origin_ref,project_id,contributor_id,received_at}`; GET `/api/wikis/{wiki_id}/sources/{source_id}` devuelve la misma forma. No existe modificación/borrado |
+| Crear registro | POST `{submission_id,kind: "prompt" \| "decision" \| "note" \| "rfd",title,body_markdown,project_id?: string \| null,client_id?: string \| null,epistemic_kind: "verified_fact" \| "decision" \| "assumption",source_ids: string[]}` devuelve `RecordDetail` |
+| Índice | `RecordSummary`: `{id,wiki_id,kind,title,project_id,client_id,head_revision_id,generation,state: "active" \| "conflicted"}`. Listado `{items: RecordSummary[]}`. El filtro `project_id` de T003 queda tipado para todos los tipos, su historia de consulta avanzada y pruebas específicas siguen T039–T046 |
+| Detalle | `RecordDetail`: campos de resumen más `{revision: Revision, sources: Source[], links: RecordLink[], review: KnowledgeReview \| null}`. `Revision`: `{id,record_id,parent_revision_id,body_markdown,author_id,created_at,epistemic_kind}`. Si está conflicted, `revision` es antecedente, nunca una ganadora vigente |
+| Proponer edición | POST `{submission_id,base_revision_id,body_markdown,epistemic_kind,source_ids: string[]}` devuelve `{record_id,proposal_id,revision_id,state: "active" \| "pending",generation}`. Reintento idéntico conserva IDs; ID incompatible devuelve 409 |
+| Conflicto | `{id,record_id,base_revision_id,generation,state: "pending" \| "resolved",proposals: [{id,submission_id,base_revision_id,revision: Revision}]}`. GET devuelve solo casos pendientes en `items`. Resolver POST `{expected_generation,body_markdown,epistemic_kind,reason,source_ids: string[]}` devuelve `RecordDetail` |
+| Enlazar | POST `/api/wikis/{wiki_id}/records/{record_id}/links` con `{target_record_id,relation}` devuelve `{source_record_id,target_record_id,relation}`; extremos en la misma wiki |
+
+### Revisión y mantenimiento locales
+
+Todas estas rutas requieren sesión y asignación comprobadas en servidor, también en escritura. No ejecutan reglas ni instrucciones del contenido. Un administrador sin asignación recibe el mismo 404 que cualquier usuario sin acceso. El contenido de mantenimiento y observaciones de revisión son texto ordinario, no aparecen en eventos; no se introducen valores secretos.
+
+| Operación | Entrada y salida |
+|---|---|
+| GET `/api/wikis/{wiki_id}/maintenance` | `{wiki_id,rules,status: "pending" \| "reviewed",reviewed_at: string \| null}`; inicial vacío/pending |
+| POST `/api/wikis/{wiki_id}/maintenance` | `{rules,status}`; devuelve forma GET, fecha del servidor cuando reviewed |
+| POST `/api/wikis/{wiki_id}/records/{record_id}/reviews` | `{revision_id,result: "verified" \| "needs_review" \| "outdated",note}`; devuelve `{revision_id,result,reviewer_id,reviewed_at,note}`. Revisión debe pertenecer al registro; solo la revisión actual obtiene el estado mostrado en detalle |
+| GET `/api/wikis/{wiki_id}/events` | `{items:[{id,wiki_id,actor_id,action,reference_id,created_at}]}` orden cronológico estable; solo metadatos, sin cuerpos, contraseñas ni tokens |
+
+Antes de exponer las rutas, sus pruebas deben comprobar rechazo sin asignación y sin mutación, persistencia tras abrir de nuevo SQLite, fuente inmutable, referencias de la misma wiki, revisión no heredada al cambiar revisión y eventos sin cuerpos. Las asociaciones proyecto/cliente se validan con identificadores existentes; RFD exige proyecto y no se infiere cliente por nombre. La UI del MVP permite usar los identificadores sintéticos documentados, sin añadir CRUD de catálogo fuera del alcance.
+
+El encabezado de mutación es `X-CSRF-Token`; Origin debe ser exactamente el origen configurado de la aplicación. Los DTO no aceptan autor/rol/agent_id como autoridad. Campos desconocidos de mutaciones se rechazan, no se reinterpretan como permisos.

@@ -10,10 +10,10 @@ Este stack es la instrucción vigente del usuario; el plan de
 specs/001-sipibrain-collective-memory/plan.md describe backend Rust y frontend Vue 3 + TypeScript.
 
 ## Desarrollo local
-Todavía no hay aplicación ejecutable ni pruebas implementadas.
-El quickstart de specs/001-sipibrain-collective-memory/ es una propuesta para Rust y
-Vue 3 + TypeScript, pendiente de ejecución. Documentar comandos reales al implementarlos;
-no presentar arranque ni pruebas como verificados antes de ejecutarlos.
+La base ejecutable está en backend/ (Cargo) y frontend/ (npm/Vite).
+El quickstart de specs/001-sipibrain-collective-memory/ distingue comandos y resultados
+comprobados de las historias pendientes. El estado por tarea y su evidencia viven en
+specs/001-sipibrain-collective-memory/tasks.md; no presentar tareas pendientes como verificadas.
 
 ## Convenciones
 - Preferir cambios mínimos, reutilizar patrones y no ampliar alcance sin permiso.
