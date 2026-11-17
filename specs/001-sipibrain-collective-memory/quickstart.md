@@ -1,19 +1,19 @@
 # Quickstart: piloto Rust + Vue 3 + TypeScript
 
-**Estado actual**: guía propuesta para después de implementar. Todavía no existen Cargo.toml, package.json, binario, aplicación Vue ni pruebas. Ningún comando de arranque/build/test de esta guía se ejecutó al actualizar el plan. No usarla como prueba de funcionamiento.
+**Estado actual**: MVP T001–T028 implementado con Rust y Vue; verificación final y estado de revisión se registran en [tasks.md](tasks.md), sección «Evidencia de implementación MVP». Las historias T029 en adelante (agentes, búsqueda avanzada, recuperación y secretos) siguen pendientes; sus escenarios de esta guía son futuros, no funcionalidades disponibles.
 
 Fuentes de alcance: [AGENTS.md](../../AGENTS.md), [spec.md](spec.md). Diseño: [plan.md](plan.md), [data-model.md](data-model.md), contratos de [aplicación](contracts/application.md) e [intercambio](contracts/agent-exchange.md).
 
-## 1. Prerrequisitos futuros
+## 1. Prerrequisitos locales
 
-- Windows, Rust/Cargo y Node/npm en versiones fijadas al implementar conforme al MSRV/requisitos de las dependencias elegidas y un build real. No se afirma que estén instalados o verificados.
+- Windows; Rust/Cargo 1.98.0 fijado en backend/rust-toolchain.toml y Node 24.22.1/npm 11.19.1 comprobados con builds reales. Es una versión probada, no una afirmación del mínimo compatible de toda la aplicación.
 - Manifiestos y lockfiles entregados: backend/Cargo.toml + Cargo.lock; frontend/package.json + package-lock.json. Versiones compatibles de SQLx, sesiones y almacén según [research.md](research.md).
 - Cuenta Windows de confianza; datos de prueba únicamente. Las cuentas de aplicación no aíslan frente a procesos con acceso equivalente a la base o bóveda del sistema.
 - Directorio de datos privado por defecto `%LOCALAPPDATA%\SIPECOM\SIPI-brain\pilot`, seleccionable con SIPIBRAIN_DATA_DIR. No carpeta de red ni sincronizada. No publicar backend/UI en LAN.
-- Bóveda Windows con persistencia CRED_PERSIST_LOCAL_MACHINE verificada para crear valores ficticios. Sin backend disponible se bloquea esa función, no se utiliza texto plano.
+- Para la historia futura de secretos: bóveda Windows con persistencia CRED_PERSIST_LOCAL_MACHINE. No implementada ni verificada en el MVP; no hay fallback a texto plano.
 - Para aceptación real SC-002: contratos/direcciones/puertos/identidades y sesión de prueba autorizada de Insight y Estimador, más mediador disponible y verificable. No escanear para obtenerlos.
 
-## 2. Compilación y preparación después de implementar
+## 2. Compilación y preparación
 
 Desde la raíz del proyecto, PowerShell:
 
@@ -30,9 +30,11 @@ cargo run --manifest-path backend/Cargo.toml -- seed-pilot --synthetic
 cargo run --manifest-path backend/Cargo.toml -- serve --bind 127.0.0.1:8080 --static-dir frontend/dist
 ```
 
-Los subcomandos pertenecen al [contrato propuesto](contracts/application.md); aún deben implementarse. El proceso resuelve static-dir desde la raíz indicada en la invocación, no desde una carpeta supuesta. Contraseñas interactivas, sin valores predeterminados ni argumentos sensibles.
+Todos los subcomandos anteriores están implementados. seed-pilot exige `--synthetic`, no crea contraseñas conocidas, no asigna automáticamente acceso a usuarios y no sobrescribe aportaciones editadas. El proceso resuelve static-dir desde el directorio de trabajo de la invocación, no desde una carpeta supuesta. Contraseñas interactivas, sin valores predeterminados ni argumentos sensibles.
 
-8080 es un puerto propuesto para SIPI-brain, no el puerto de los otros agentes. La aplicación sirve Vue y `/api` en el mismo origen. El administrador asigna wikis a los programadores y su propio acceso a las que deba revisar; el backend valida esas asignaciones.
+La siembra informa identificadores estables: wikis `pilot-insight` / `pilot-estimador`, proyectos `pilot-project-alfa` / `pilot-project-beta`, clientes `pilot-client-alfa` / `pilot-client-beta`. Usarlos en los campos de asociación del MVP; no se deducen por nombre. El índice está paginado; las búsquedas filtradas pertenecen a US3 y por ahora se rechazan explícitamente con 400.
+
+8080 es el puerto local predeterminado de SIPI-brain, no el puerto de los otros agentes. La aplicación sirve Vue y `/api` en el mismo origen. El administrador asigna wikis a los programadores y su propio acceso a las que deba revisar; el backend valida esas asignaciones. El piloto HTTP admite solo datos sintéticos; no publicar en LAN ni introducir información real sensible.
 
 ### Desarrollo desacoplado, sin CORS general
 
@@ -42,7 +44,7 @@ En una terminal, backend con el bind anterior. En otra:
 npm --prefix frontend run dev -- --host 127.0.0.1
 ```
 
-Vite debe tener proxy `/api` al backend configurado; solo los orígenes locales exactos del desarrollo se habilitan para la validación Origin. La excepción HTTP/cookie sin Secure es exclusivamente sintética; no extrapolar estos ajustes a datos reales o producción.
+Vite tiene proxy `/api` a 127.0.0.1:8080. Para admitir las mutaciones desde Vite, iniciar el backend con `SIPIBRAIN_DEV_ORIGIN=http://127.0.0.1:5173` (o `http://localhost:5173`, exactamente). `SIPIBRAIN_ORIGIN` permite fijar el origen principal local exacto sin barra final; por defecto deriva del listener. No CORS general. La excepción HTTP/cookie sin Secure es exclusivamente sintética; no extrapolar a datos reales o producción.
 
 ## 3. Datos y escenarios
 
@@ -63,9 +65,9 @@ Crear dos wikis, Insight y Estimador. Proyecto Alfa/Cliente Alfa: RFD-001, RFD-0
 | Frontera Vue | Mostrar texto con HTML/script como dato y provocar error de creación de secreto | Nada se ejecuta; el valor no queda en consola, estado persistente o respuesta |
 | Mediación denegada | Puerto accesible con mediador ausente/denegado | Cero contenido ajeno; conexión no equivale a intercambio |
 
-## 4. Comprobaciones automatizadas previstas
+## 4. Comprobaciones automatizadas
 
-Scripts de frontend a implementar: typecheck usa vue-tsc; test usa Vitest; build/dev usan Vite. Ninguno existe todavía.
+Scripts implementados: typecheck usa vue-tsc; test usa Vitest; build/dev usan Vite. Cargo prueba SQLite temporal en archivo. Los comandos siguientes no prueban por sí solos historias futuras ni integración real de agentes.
 
 ```powershell
 $env:SIPIBRAIN_TEST_DATA_DIR = Join-Path ([System.IO.Path]::GetTempPath()) ("sipibrain-tests-" + [guid]::NewGuid().ToString('N'))
@@ -110,4 +112,6 @@ Sin contratos, servicios y mediador, SC-002 queda **bloqueado/no ejecutado**, no
 
 Registrar versiones/lockfiles, entorno, comandos, código de salida y casos aprobados/fallidos/no ejecutados con referencias sanitizadas. Comparar hash del estado de negocio antes/después de rechazos; los eventos de denegación pueden crecer sin cambiar propuestas o permisos. No guardar cuerpos de secretos, volcados, credenciales o capturas con valores.
 
-Estado actual: solo planificación y validación documental. Builds, pruebas de aplicación, bóveda y conexiones reales **no ejecutados**.
+Resultado comprobado: Vue14 PASS, typecheck/build; Rust26 PASS antes de incorporar dos sondas adicionales de seed. Verificación independiente del núcleo y seed satisfactoria. Flujo real navegador/API: dos programadores aportan con autoría, fuente y revisión; propuestas desde la misma base reciben201/202; después de reiniciar se conservan sesión, aportaciones y ambas candidatas; un administrador resuelve manualmente, sin modificar el hash original ni heredar la revisión humana anterior. El servidor temporal se detuvo. La ejecución final de suites y la revisión nativa se registran por separado en tasks.md; no se infiere aprobación de revisión desde pruebas funcionales.
+
+Bóveda y conexiones reales **no ejecutadas**. Cuatro advertencias npm moderadas transitivas del entorno de pruebas no tienen corrección compatible automática; están en dependencias de desarrollo y no se declaran resueltas. Vitest tuvo dos timeouts de arranque de worker durante trabajo paralelo; la ejecución secuenciada posterior sí ejecutó y aprobó14 casos, no se cuentan los timeouts como pruebas RED.

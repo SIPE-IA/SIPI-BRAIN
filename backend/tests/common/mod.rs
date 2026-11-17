@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 
-use std::{path::PathBuf, str::FromStr};
+use std::path::PathBuf;
 
 use argon2::{Argon2, password_hash::PasswordHasher};
 use axum::{Router, body::Body, http::Request};
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
-use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
+use sqlx::{Column, Row, SqlitePool, TypeInfo, ValueRef};
 use tower::ServiceExt;
 
 pub const ORIGIN: &str = "http://127.0.0.1:8080";
@@ -82,24 +82,51 @@ impl TestClient {
     }
 
     pub async fn business_snapshot(&self) -> Value {
-        let records: Vec<(String, String, i64, String)> =
-            sqlx::query_as("SELECT id,head_revision_id,generation,state FROM records ORDER BY id")
+        let mut snapshot = serde_json::Map::new();
+        for table in [
+            "agents",
+            "wikis",
+            "wiki_assignments",
+            "clients",
+            "projects",
+            "records",
+            "revisions",
+            "original_sources",
+            "source_references",
+            "record_links",
+            "record_submissions",
+            "wiki_maintenance",
+            "knowledge_reviews",
+            "edit_proposals",
+            "edit_conflicts",
+            "conflict_candidates",
+            "conflict_resolutions",
+        ] {
+            let rows = sqlx::query(&format!("SELECT * FROM {table} ORDER BY rowid"))
                 .fetch_all(&self.pool)
                 .await
                 .unwrap();
-        let revisions: i64 = sqlx::query_scalar("SELECT count(*) FROM revisions")
-            .fetch_one(&self.pool)
-            .await
-            .unwrap();
-        let proposals: i64 = sqlx::query_scalar("SELECT count(*) FROM edit_proposals")
-            .fetch_one(&self.pool)
-            .await
-            .unwrap();
-        let resolutions: i64 = sqlx::query_scalar("SELECT count(*) FROM conflict_resolutions")
-            .fetch_one(&self.pool)
-            .await
-            .unwrap();
-        json!({"records":records,"revisions":revisions,"proposals":proposals,"resolutions":resolutions})
+            let values = rows
+                .iter()
+                .map(|row| {
+                    let mut object = serde_json::Map::new();
+                    for column in row.columns() {
+                        let raw = row.try_get_raw(column.ordinal()).unwrap();
+                        let value = if raw.is_null() {
+                            Value::Null
+                        } else if raw.type_info().name() == "INTEGER" {
+                            json!(row.get::<i64, _>(column.ordinal()))
+                        } else {
+                            json!(row.get::<String, _>(column.ordinal()))
+                        };
+                        object.insert(column.name().into(), value);
+                    }
+                    Value::Object(object)
+                })
+                .collect();
+            snapshot.insert(table.into(), Value::Array(values));
+        }
+        Value::Object(snapshot)
     }
 
     pub async fn new() -> Self {
@@ -110,12 +137,7 @@ impl TestClient {
             .keep();
         eprintln!("scratch: {}", root.display());
         std::fs::write(root.join("index.html"), "<div id=app>fixture</div>").unwrap();
-        let options =
-            SqliteConnectOptions::from_str(&format!("sqlite://{}", root.join("test.db").display()))
-                .unwrap()
-                .create_if_missing(true)
-                .foreign_keys(true);
-        let pool = SqlitePool::connect_with(options).await.unwrap();
+        let pool = sipibrain::db::open(&root.join("test.db")).await.unwrap();
         let router = sipibrain::api::application(pool.clone(), ORIGIN, &root)
             .await
             .unwrap();

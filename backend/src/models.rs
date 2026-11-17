@@ -374,4 +374,3 @@ pub struct WikiEvent {
     pub reference_id: String,
     pub created_at: String,
 }
-

@@ -9,9 +9,9 @@ Objective: implement only the authorized Rust/Vue MVP. Branch: codex/sipibrain-m
 
 ## Tasks
 
-- M1 | S1–S3 | delegated setup checkpoints: backend and frontend are independent contract-bound components with disjoint surfaces, each continuing with its tests as a multi-minute behavior unit | pending | commit pending
-- M2 | S1–S3 | parent contract/DTO seam, then delegated API/session/assignment and Vue-session components, parent integration | pending | commit pending
-- M3 | S1–S3 | delegated knowledge/proposal API and contract-bound Vue editing/review/conflict interface, then independent security/concurrency verification and local smoke | pending | commit pending
+- M1 | S1–S3 | delegated setup checkpoints: backend and frontend are independent contract-bound components with disjoint surfaces, each continuing with its tests as a multi-minute behavior unit | verified T001–T003 | captured by user/other actor commit 0245bb8
+- M2 | S1–S3 | parent contract/DTO seam, then delegated API/session/assignment and Vue-session components, parent integration | verified T004–T012, Rust11/Vue7 and real compiled asset smoke | captured by user/other actor commit 0245bb8
+- M3 | S1–S3 | delegated knowledge/proposal API and contract-bound Vue editing/review/conflict interface, then independent security/concurrency verification and local smoke | T013–T028 verified, Rust28/Vue14 and actual browser/API/restart; independent core/seed probes passed | local closure commit and native review decision pending
 
 ## Log
 
@@ -26,3 +26,7 @@ Objective: implement only the authorized Rust/Vue MVP. Branch: codex/sipibrain-m
 - 2026-11-16: T010/T011 GREEN with six assertion RED before implementation, Vitest7/typecheck/build pass. T012 actual compiled Vue API smoke delegated per-action to backend worker, then RED T013-015 only. Native assess attempted with named security risk2: high/unassessable because implementation files untracked; no authority frozen or consent inferred; assessment/review will run on finalized local unit.
 - 2026-11-16: T012 verified actual compiled Vue root/JS200 and unknownAPI404JSON; full Rust11/Vue7/typecheck/build pass. T013-T015 observed7 assertion RED on missing source/record behavior; frontend T016 RED now authorized. Core implementation waits for all tests.
 - 2026-11-16: T016 observed5 assertion RED/typecheck PASS. Backend authorized T017-T023 only, sequential core implementation with full immutable source/revision/reference/review/proposal/transaction invariants. T024+ waits for working API. Scope still no US2+, secrets or external services.
+- 2026-11-16: User requested continua after interrupted worker. User/other actor baseline0245bb8 on main captured application and partial migrations; preserve it and unrelated registry edits. Created new codex feature branch from current HEAD for resumed local units; core tasks remain unchecked until proof.
+- 2026-11-16: T017-T023 GREEN Cargo21/check/clippy/fmt. Parent repeated conflicts tests; backend core security/concurrency independent verification launched in external scratch. Frontend now owns T024-T026 (contract-bound UI+tests), core no seed yet. UUID spelling normalized before idempotency, harness uses real150ms busy timeout;3 attempts bounded.
+- 2026-11-16: Independent backend21+baseline security7+3 API probes PASS with unchanged business snapshots. Adopted3 probes in authorization_regressions.rs and reran PASS. UI T024-T026 typecheck/build and parent sequenced Vitest14/3files PASS19.83s after worker-startup timeouts during parallel resource use. T027 synthetic seed delegated; T028 actual browser/restart pending.
+- 2026-11-16: T027 seed complete; independent seed2+2 probes PASS. Actual T028 browser/API/restart/manual admin resolution/sourcehash/authorship/candidate retention PASS. Final Rust28/fmt/check/clippy and Vue14/typecheck/build PASS. Server stopped,202 exact test temp directories safely removed. All T001-T028 functionally verified; native review decision and local closure commit remain pending. T029-T067 untouched.

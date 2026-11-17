@@ -1,7 +1,7 @@
-use crate::{access, auth, db, models::*, services};
+use crate::{auth, db, models::*, services};
 use axum::{
     Json, Router,
-    extract::{Path as RoutePath, Request, State, rejection::JsonRejection},
+    extract::{Path as RoutePath, Query, Request, State, rejection::JsonRejection},
     http::{HeaderValue, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -58,7 +58,26 @@ pub async fn application(
         .route("/login", post(login))
         .route("/logout", post(logout))
         .route("/wikis", get(wikis))
-        .route("/wikis/{wiki_id}/records", get(records_guard))
+        .route("/wikis/{wiki_id}/records", get(records).post(create_record))
+        .route("/wikis/{wiki_id}/records/{record_id}", get(record))
+        .route("/wikis/{wiki_id}/sources", post(create_source))
+        .route("/wikis/{wiki_id}/sources/{source_id}", get(source))
+        .route(
+            "/wikis/{wiki_id}/records/{record_id}/proposals",
+            post(propose),
+        )
+        .route("/wikis/{wiki_id}/conflicts", get(conflicts))
+        .route(
+            "/wikis/{wiki_id}/conflicts/{conflict_id}/resolve",
+            post(resolve),
+        )
+        .route("/wikis/{wiki_id}/records/{record_id}/links", post(link))
+        .route("/wikis/{wiki_id}/records/{record_id}/reviews", post(review))
+        .route(
+            "/wikis/{wiki_id}/maintenance",
+            get(maintenance).post(set_maintenance),
+        )
+        .route("/wikis/{wiki_id}/events", get(events))
         .route("/admin/assignments", get(assignments).post(set_assignment))
         .fallback(not_found)
         .layer(middleware::from_fn_with_state(state.clone(), protect))
@@ -165,15 +184,17 @@ async fn wikis(
     let user = auth::require_user(&state.pool, &session).await?;
     Ok(Json(services::wikis(&state.pool, &user).await?))
 }
-// Foundation guard only; record retrieval is added after the T012 checkpoint.
-async fn records_guard(
+async fn records(
     State(state): State<AppState>,
     session: Session,
     RoutePath(wiki_id): RoutePath<String>,
+    query: Result<Query<RecordQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Result<Json<Items<RecordSummary>>, ApiError> {
     let user = auth::require_user(&state.pool, &session).await?;
-    access::require_assignment(&state.pool, &user, &wiki_id).await?;
-    Ok(Json(Items { items: vec![] }))
+    let Query(query) = query.map_err(|_| ApiError(ErrorCode::InvalidInput))?;
+    Ok(Json(
+        services::records(&state.pool, &user, &wiki_id, query).await?,
+    ))
 }
 async fn assignments(
     State(state): State<AppState>,
@@ -201,4 +222,137 @@ async fn not_found() -> impl IntoResponse {
             message: "Resource not found.".into(),
         }),
     )
+}
+
+async fn create_source(
+    State(state): State<AppState>,
+    session: Session,
+    RoutePath(wiki): RoutePath<String>,
+    payload: Result<Json<SourceInput>, JsonRejection>,
+) -> Result<(StatusCode, Json<Source>), ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(services::create_source(&state.pool, &user, &wiki, input(payload)?).await?),
+    ))
+}
+async fn source(
+    State(state): State<AppState>,
+    session: Session,
+    RoutePath((wiki, source)): RoutePath<(String, String)>,
+) -> Result<Json<Source>, ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    Ok(Json(
+        services::get_source(&state.pool, &user, &wiki, &source).await?,
+    ))
+}
+async fn create_record(
+    State(state): State<AppState>,
+    session: Session,
+    RoutePath(wiki): RoutePath<String>,
+    payload: Result<Json<RecordInput>, JsonRejection>,
+) -> Result<(StatusCode, Json<RecordDetail>), ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(services::create_record(&state.pool, &user, &wiki, input(payload)?).await?),
+    ))
+}
+async fn record(
+    State(state): State<AppState>,
+    session: Session,
+    RoutePath((wiki, record)): RoutePath<(String, String)>,
+) -> Result<Json<RecordDetail>, ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    Ok(Json(
+        services::get_record(&state.pool, &user, &wiki, &record).await?,
+    ))
+}
+async fn propose(
+    State(state): State<AppState>,
+    session: Session,
+    RoutePath((wiki, record)): RoutePath<(String, String)>,
+    payload: Result<Json<ProposalInput>, JsonRejection>,
+) -> Result<(StatusCode, Json<ProposalResult>), ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    let (status, result) =
+        services::propose(&state.pool, &user, &wiki, &record, input(payload)?).await?;
+    Ok((
+        StatusCode::from_u16(status).expect("fixed proposal status"),
+        Json(result),
+    ))
+}
+async fn conflicts(
+    State(state): State<AppState>,
+    session: Session,
+    RoutePath(wiki): RoutePath<String>,
+) -> Result<Json<Items<Conflict>>, ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    Ok(Json(services::conflicts(&state.pool, &user, &wiki).await?))
+}
+async fn resolve(
+    State(state): State<AppState>,
+    session: Session,
+    RoutePath((wiki, conflict)): RoutePath<(String, String)>,
+    payload: Result<Json<ResolutionInput>, JsonRejection>,
+) -> Result<(StatusCode, Json<RecordDetail>), ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    auth::require_admin(&user)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(services::resolve(&state.pool, &user, &wiki, &conflict, input(payload)?).await?),
+    ))
+}
+async fn link(
+    State(state): State<AppState>,
+    session: Session,
+    RoutePath((wiki, record)): RoutePath<(String, String)>,
+    payload: Result<Json<LinkInput>, JsonRejection>,
+) -> Result<(StatusCode, Json<RecordLink>), ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(services::link(&state.pool, &user, &wiki, &record, input(payload)?).await?),
+    ))
+}
+async fn review(
+    State(state): State<AppState>,
+    session: Session,
+    RoutePath((wiki, record)): RoutePath<(String, String)>,
+    payload: Result<Json<ReviewInput>, JsonRejection>,
+) -> Result<(StatusCode, Json<KnowledgeReview>), ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(services::review(&state.pool, &user, &wiki, &record, input(payload)?).await?),
+    ))
+}
+async fn maintenance(
+    State(state): State<AppState>,
+    session: Session,
+    RoutePath(wiki): RoutePath<String>,
+) -> Result<Json<Maintenance>, ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    Ok(Json(
+        services::maintenance(&state.pool, &user, &wiki).await?,
+    ))
+}
+async fn set_maintenance(
+    State(state): State<AppState>,
+    session: Session,
+    RoutePath(wiki): RoutePath<String>,
+    payload: Result<Json<MaintenanceInput>, JsonRejection>,
+) -> Result<Json<Maintenance>, ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    Ok(Json(
+        services::set_maintenance(&state.pool, &user, &wiki, input(payload)?).await?,
+    ))
+}
+async fn events(
+    State(state): State<AppState>,
+    session: Session,
+    RoutePath(wiki): RoutePath<String>,
+) -> Result<Json<Items<WikiEvent>>, ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    Ok(Json(services::events(&state.pool, &user, &wiki).await?))
 }
