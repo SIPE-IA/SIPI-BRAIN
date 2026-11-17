@@ -45,6 +45,7 @@ async function save() {
   try {
     if (props.record) {
       const result = await props.api.propose(props.wikiId, props.record.id, { ...content, base_revision_id: props.record.head_revision_id })
+      submissionId.value = crypto.randomUUID()
       notice.value = result.state === 'pending' ? 'Proposal preserved; pending administrator resolution. No final winner.' : 'Saved proposal.'
       emit('proposed', result)
     } else {

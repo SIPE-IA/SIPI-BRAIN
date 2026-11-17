@@ -163,6 +163,12 @@ test('treats an HTTP202 pending proposal as preserved rather than an unsuccessfu
   expect(wrapper.text()).toContain('Proposal preserved')
   expect(wrapper.text()).not.toContain('Not saved')
   expect(wrapper.text()).toContain('pending')
+  await wrapper.get('textarea[name="record-body"]').setValue('A second pending proposal')
+  await wrapper.get('form[name="record-edit"]').trigger('submit')
+  await flushPromises()
+  const submissions = fetchMock.mock.calls.filter(([path, init]) => String(path).endsWith('/proposals') && init?.method === 'POST').map(([, init]) => JSON.parse(String(init?.body)).submission_id)
+  expect(submissions).toHaveLength(2)
+  expect(submissions[1]).not.toBe(submissions[0])
   wrapper.unmount()
 })
 
