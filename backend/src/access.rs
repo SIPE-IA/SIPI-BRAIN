@@ -20,3 +20,16 @@ pub async fn assignment_on(
     }
     Ok(())
 }
+
+pub async fn admin_on(connection: &mut SqliteConnection, user_id: &str) -> Result<(), ApiError> {
+    let admin: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM users WHERE id=? AND active=1 AND role='admin')",
+    )
+    .bind(user_id)
+    .fetch_one(connection)
+    .await?;
+    if !admin {
+        return Err(ApiError(ErrorCode::Forbidden));
+    }
+    Ok(())
+}

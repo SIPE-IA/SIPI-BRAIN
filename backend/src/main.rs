@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use sipibrain::{api, auth, config, db};
+use sipibrain::{api, auth, config, db, pilot};
 use std::{
     io::{self, Write},
     net::SocketAddr,
@@ -19,6 +19,11 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Seed fictitious pilot knowledge only; never creates usable user credentials.
+    SeedPilot {
+        #[arg(long, required = true)]
+        synthetic: bool,
+    },
     /// Initialize the local SQLite schema.
     InitDb,
     /// Interactively create the first administrator (only once).
@@ -47,6 +52,9 @@ async fn main() -> ExitCode {
     }
 }
 async fn run(cli: Cli) -> Result<(), String> {
+    if matches!(cli.command, Command::SeedPilot { synthetic: false }) {
+        return Err("Synthetic seeding requires --synthetic.".into());
+    }
     if let Command::Serve {
         bind,
         ref static_dir,
@@ -64,6 +72,19 @@ async fn run(cli: Cli) -> Result<(), String> {
         .map_err(|_| "Database initialization failed.")?;
     match cli.command {
         Command::InitDb => println!("Database initialized."),
+        Command::SeedPilot { .. } => {
+            pilot::seed(&pool).await.map_err(
+                |_| "Synthetic seed failed; existing contributions were not overwritten.",
+            )?;
+            println!("Synthetic pilot ready. User assignments remain administrator-managed.");
+            println!(
+                "Wikis: {} (SIPI Insight), {} (SIPI Estimador)",
+                pilot::INSIGHT,
+                pilot::ESTIMADOR
+            );
+            println!("Projects: {} (Alfa), {} (Beta)", pilot::ALFA, pilot::BETA);
+            println!("Clients: pilot-client-alfa, pilot-client-beta");
+        }
         Command::BootstrapAdmin | Command::CreateUser { .. } => {
             let admin = matches!(cli.command, Command::BootstrapAdmin);
             let username = match cli.command {

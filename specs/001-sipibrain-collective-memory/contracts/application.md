@@ -76,6 +76,8 @@ Estos son contratos propuestos, no comandos existentes. Cargo compila/prueba el 
 
 Este apartado fija la interfaz de T001–T028 antes de implementarla. No habilita secretos, intercambio entre agentes ni la historia de búsqueda avanzada (T029 en adelante). Identificadores y fechas UTC son strings; datos ausentes usan `null`; colecciones usan `{ "items": [...] }`. Un error usa `{ "code": "...", "message": "..." }`, con mensaje fijo no derivado de la entrada. Desconocidos o inaccesibles son indistinguibles.
 
+Disponibilidad del MVP: el índice básico implementado acepta `limit` y `offset`. Los DTO ya reservan `q`, `agent_id`, `client_id` y `project_id`, pero la consulta filtrada se implementa y verifica en T039–T046: mientras tanto, enviar esos filtros devuelve `400 invalid_input`, nunca una lista sin filtrar presentada como resultado correcto. Las operaciones de secretos e intercambio no están expuestas.
+
 | DTO / operación | Forma |
 |---|---|
 | `User` / sesión | Usuario `{id, username, role: "admin" \| "programmer"}`. Sesión `{user: User \| null, csrf_token}`. Login recibe `{username,password}` y devuelve sesión rotada; logout devuelve sesión anónima nueva con token vigente |

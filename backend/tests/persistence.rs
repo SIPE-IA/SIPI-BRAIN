@@ -141,3 +141,47 @@ async fn clients_can_share_names_but_rfd_projects_and_explicit_clients_must_agre
         201
     );
 }
+
+#[tokio::test]
+async fn two_programmers_keep_authorship_after_restart_and_references_remain_local() {
+    let mut c = TestClient::knowledge().await;
+    let one = c.record("first programmer prompt", vec![]).await;
+    let mut second = c.fork("two").await;
+    let two = second.record("second programmer prompt", vec![]).await;
+    c.reopen().await;
+    for (record, author) in [(&one, "one"), (&two, "two")] {
+        let recovered = c
+            .get(&format!(
+                "/api/wikis/insight/records/{}",
+                record["id"].as_str().unwrap()
+            ))
+            .await;
+        assert_eq!(recovered.status, 200);
+        assert_eq!(recovered.body["revision"]["author_id"], author);
+        assert_eq!(
+            recovered.body["revision"]["body_markdown"],
+            record["revision"]["body_markdown"]
+        );
+    }
+    let items = c.get("/api/wikis/insight/records").await.body["items"]
+        .as_array()
+        .unwrap()
+        .len();
+    assert_eq!(items, 2);
+    sqlx::query("INSERT INTO wiki_assignments(user_id,wiki_id,assigned_by,assigned_at) VALUES('one','estimator','admin','2026-11-16T00:00:00Z')").execute(&c.pool).await.unwrap();
+    let foreign=c.post("/api/wikis/estimator/records",json!({"submission_id":uuid::Uuid::new_v4().to_string(),"kind":"note","title":"Foreign wiki","body_markdown":"foreign","epistemic_kind":"assumption","source_ids":[]})).await;
+    assert_eq!(foreign.status, 201);
+    let before = c.business_snapshot().await;
+    let own_path = format!("/api/wikis/insight/records/{}", one["id"].as_str().unwrap());
+    assert_eq!(
+        c.post(
+            &format!("{own_path}/links"),
+            json!({"target_record_id":foreign.body["id"],"relation":"supports"})
+        )
+        .await
+        .status,
+        400
+    );
+    assert_eq!(c.post(&format!("{own_path}/reviews"),json!({"revision_id":foreign.body["head_revision_id"],"result":"verified","note":"must not attach"})).await.status,400);
+    assert_eq!(c.business_snapshot().await, before);
+}

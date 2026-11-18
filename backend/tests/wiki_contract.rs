@@ -75,8 +75,80 @@ async fn inaccessible_knowledge_is_indistinguishable_and_cross_wiki_references_f
         record["id"].as_str().unwrap()
     );
     let proposal = json!({"submission_id":uuid::Uuid::new_v4().to_string(),"base_revision_id":record["head_revision_id"],"body_markdown":"not authorized by reference","epistemic_kind":"assumption","source_ids":[foreign.body["id"]]});
+    let before_reference = c.business_snapshot().await;
     let rejected = c.post(&path, proposal).await;
     assert_eq!(rejected.status, 400);
     assert_eq!(rejected.body["code"], "invalid_input");
+    assert_eq!(c.business_snapshot().await, before_reference);
+}
+
+#[tokio::test]
+async fn submission_ids_cannot_move_between_authorized_record_destinations() {
+    let mut c = TestClient::knowledge().await;
+    let first = c.record("first base", vec![]).await;
+    let second = c.record("second base", vec![]).await;
+    let key = uuid::Uuid::new_v4().to_string();
+    let payload = json!({"submission_id":key,"base_revision_id":first["head_revision_id"],"body_markdown":"proposed text","epistemic_kind":"assumption","source_ids":[]});
+    assert_eq!(
+        c.post(
+            &format!(
+                "/api/wikis/insight/records/{}/proposals",
+                first["id"].as_str().unwrap()
+            ),
+            payload.clone()
+        )
+        .await
+        .status,
+        201
+    );
+    let mut moved = payload;
+    moved["base_revision_id"] = second["head_revision_id"].clone();
+    let before = c.business_snapshot().await;
+    let rejected = c
+        .post(
+            &format!(
+                "/api/wikis/insight/records/{}/proposals",
+                second["id"].as_str().unwrap()
+            ),
+            moved,
+        )
+        .await;
+    assert_eq!(rejected.status, 409);
+    assert_eq!(rejected.body["code"], "idempotency_conflict");
+    assert_eq!(c.business_snapshot().await, before);
+    sqlx::query("DELETE FROM wiki_assignments WHERE user_id='one' AND wiki_id='insight'")
+        .execute(&c.pool)
+        .await
+        .unwrap();
+    let before = c.business_snapshot().await;
+    for (path, payload) in [
+        (
+            "/api/wikis/insight/maintenance".into(),
+            json!({"rules":"do not save","status":"reviewed"}),
+        ),
+        (
+            format!(
+                "/api/wikis/insight/records/{}/reviews",
+                second["id"].as_str().unwrap()
+            ),
+            json!({"revision_id":second["head_revision_id"],"result":"verified","note":"do not save"}),
+        ),
+    ] {
+        assert_eq!(c.post(&path, payload).await.status, 404);
+    }
+    assert_eq!(c.business_snapshot().await, before);
+}
+
+#[tokio::test]
+async fn equivalent_uuid_submission_spellings_do_not_duplicate_a_contribution() {
+    let mut c = TestClient::knowledge().await;
+    let mut payload = json!({"submission_id":"8F52103A-736C-4AFE-9984-A9F4B10BB823","kind":"prompt","title":"Canonical submission","body_markdown":"Same intent","epistemic_kind":"assumption","source_ids":[]});
+    let first = c.post("/api/wikis/insight/records", payload.clone()).await;
+    assert_eq!(first.status, 201);
+    let before = c.business_snapshot().await;
+    payload["submission_id"] = "8f52103a-736c-4afe-9984-a9f4b10bb823".into();
+    let repeated = c.post("/api/wikis/insight/records", payload).await;
+    assert_eq!(repeated.status, 201);
+    assert_eq!(repeated.body["id"], first.body["id"]);
     assert_eq!(c.business_snapshot().await, before);
 }

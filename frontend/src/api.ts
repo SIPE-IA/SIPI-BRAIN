@@ -1,4 +1,9 @@
-import type { AssignmentIndex, AssignmentInput, AssignmentResult, Items, LoginInput, SessionState, Wiki } from './types'
+import type {
+  AssignmentIndex, AssignmentInput, AssignmentResult, Conflict, Items, KnowledgeReview,
+  KnowledgeReviewInput, LoginInput, MaintenanceInput, ProposalInput, ProposalResult,
+  RecordDetail, RecordInput, RecordLink, RecordSummary, ResolutionInput, SessionState,
+  Source, SourceInput, Wiki, WikiEvent, WikiMaintenance,
+} from './types'
 
 const errorMessages: Record<string, string> = {
   unauthenticated: 'Your session has expired. Sign in again.',
@@ -77,5 +82,58 @@ export class ApiClient {
 
   setAssignment(input: AssignmentInput): Promise<AssignmentResult> {
     return this.request('/admin/assignments', input)
+  }
+
+  records(wikiId: string, offset = 0): Promise<Items<RecordSummary>> {
+    const pagination = `?offset=${offset}&limit=50`
+    return this.request(`/wikis/${encodeURIComponent(wikiId)}/records${pagination}`)
+  }
+
+  record(wikiId: string, recordId: string): Promise<RecordDetail> {
+    return this.request(`/wikis/${encodeURIComponent(wikiId)}/records/${encodeURIComponent(recordId)}`)
+  }
+
+  createRecord(wikiId: string, input: RecordInput): Promise<RecordDetail> {
+    return this.request(`/wikis/${encodeURIComponent(wikiId)}/records`, input)
+  }
+
+  propose(wikiId: string, recordId: string, input: ProposalInput): Promise<ProposalResult> {
+    return this.request(`/wikis/${encodeURIComponent(wikiId)}/records/${encodeURIComponent(recordId)}/proposals`, input)
+  }
+
+  createSource(wikiId: string, input: SourceInput): Promise<Source> {
+    return this.request(`/wikis/${encodeURIComponent(wikiId)}/sources`, input)
+  }
+
+  source(wikiId: string, sourceId: string): Promise<Source> {
+    return this.request(`/wikis/${encodeURIComponent(wikiId)}/sources/${encodeURIComponent(sourceId)}`)
+  }
+
+  conflicts(wikiId: string): Promise<Items<Conflict>> {
+    return this.request(`/wikis/${encodeURIComponent(wikiId)}/conflicts`)
+  }
+
+  resolve(wikiId: string, conflictId: string, input: ResolutionInput): Promise<RecordDetail> {
+    return this.request(`/wikis/${encodeURIComponent(wikiId)}/conflicts/${encodeURIComponent(conflictId)}/resolve`, input)
+  }
+
+  link(wikiId: string, recordId: string, input: { target_record_id: string; relation: string }): Promise<RecordLink> {
+    return this.request(`/wikis/${encodeURIComponent(wikiId)}/records/${encodeURIComponent(recordId)}/links`, input)
+  }
+
+  review(wikiId: string, recordId: string, input: KnowledgeReviewInput): Promise<KnowledgeReview> {
+    return this.request(`/wikis/${encodeURIComponent(wikiId)}/records/${encodeURIComponent(recordId)}/reviews`, input)
+  }
+
+  maintenance(wikiId: string): Promise<WikiMaintenance> {
+    return this.request(`/wikis/${encodeURIComponent(wikiId)}/maintenance`)
+  }
+
+  setMaintenance(wikiId: string, input: MaintenanceInput): Promise<WikiMaintenance> {
+    return this.request(`/wikis/${encodeURIComponent(wikiId)}/maintenance`, input)
+  }
+
+  events(wikiId: string): Promise<Items<WikiEvent>> {
+    return this.request(`/wikis/${encodeURIComponent(wikiId)}/events`)
   }
 }
