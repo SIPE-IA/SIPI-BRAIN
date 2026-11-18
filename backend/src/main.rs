@@ -119,7 +119,23 @@ async fn run(cli: Cli) -> Result<(), String> {
                 .local_addr()
                 .map_err(|_| "Cannot resolve listener address.")?;
             let origin = config::origin(bound)?;
+            #[cfg(not(feature = "local-connection-fixture"))]
             let app = api::application(pool.clone(), &origin, &static_dir).await?;
+            #[cfg(feature = "local-connection-fixture")]
+            let app = {
+                let catalog = if let Some(path) = std::env::var_os("SIPIBRAIN_LOCAL_FIXTURE_CATALOG") {
+                    let path = std::path::PathBuf::from(path);
+                    if bound.ip() != std::net::Ipv4Addr::LOCALHOST || !path.is_absolute()
+                        || path.to_string_lossy().starts_with(r"\\")
+                    {
+                        return Err("Local test catalog requires a local absolute path and a 127.0.0.1 listener.".into());
+                    }
+                    sipibrain::agent_connection::Catalog::fixture(path)
+                } else {
+                    sipibrain::agent_connection::Catalog::default()
+                };
+                api::application_with_catalog(pool.clone(), &origin, &static_dir, catalog).await?
+            };
             eprintln!("Synthetic data only. Local server: {origin}");
             axum::serve(listener, app)
                 .with_graceful_shutdown(async {

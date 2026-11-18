@@ -1,4 +1,4 @@
-use crate::{auth, db, models::*, services};
+use crate::{agent_connection::{Catalog, Destination, TestResult}, auth, db, models::*, services};
 use axum::{
     Json, Router,
     extract::{Path as RoutePath, Query, Request, State, rejection::JsonRejection},
@@ -18,12 +18,19 @@ use tower_sessions_sqlx_store::SqliteStore;
 pub struct AppState {
     pub pool: SqlitePool,
     pub origins: Arc<Vec<String>>,
+    catalog: Catalog,
 }
 
 pub async fn application(
     pool: SqlitePool,
     origin: &str,
     static_dir: &Path,
+) -> Result<Router, String> {
+    application_with_catalog(pool, origin, static_dir, Catalog::default()).await
+}
+
+pub async fn application_with_catalog(
+    pool: SqlitePool, origin: &str, static_dir: &Path, catalog: Catalog,
 ) -> Result<Router, String> {
     if !static_dir.is_dir() || !static_dir.join("index.html").is_file() {
         return Err("Static directory must contain index.html.".into());
@@ -46,6 +53,7 @@ pub async fn application(
     let state = AppState {
         pool,
         origins: Arc::new(origins),
+        catalog,
     };
     let sessions = SessionManagerLayer::new(store)
         .with_name("sipibrain.sid")
@@ -80,6 +88,10 @@ pub async fn application(
         .route("/wikis/{wiki_id}/events", get(events))
         .route("/admin/assignments", get(assignments).post(set_assignment))
         .route("/admin/wikis", get(admin_wikis).post(create_wiki))
+        .route("/admin/agents", get(admin_agents).post(register_agent))
+        .route("/admin/connection-destinations", get(connection_destinations))
+        .route("/admin/agents/{agent_id}/connection", axum::routing::put(save_connection))
+        .route("/admin/agents/{agent_id}/connection/test", post(test_connection))
         .route("/admin/wiki-activity", get(wiki_activity))
         .fallback(not_found)
         .layer(middleware::from_fn_with_state(state.clone(), protect))
@@ -212,6 +224,59 @@ async fn admin_wikis(
     let user = auth::require_user(&state.pool, &session).await?;
     Ok(Json(services::admin_wikis(&state.pool, &user).await?))
 }
+async fn connection_destinations(
+    State(state): State<AppState>, session: Session,
+) -> Result<Json<Items<Destination>>, ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    auth::require_admin(&user)?;
+    Ok(Json(state.catalog.destinations().await))
+}
+
+async fn save_connection(
+    State(state): State<AppState>, session: Session, RoutePath(agent): RoutePath<String>,
+    payload: Result<Json<ConnectionInput>, JsonRejection>,
+) -> Result<Json<ConnectionSummary>, ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    auth::require_admin(&user)?;
+    let config = input(payload)?;
+    let mut catalog = state.catalog.lock().await;
+    if !catalog.allows(&config.destination_id).await {
+        return Err(ApiError(ErrorCode::InvalidInput));
+    }
+    Ok(Json(services::save_connection(&state.pool, &user, &agent, config).await?))
+}
+
+async fn test_connection(
+    State(state): State<AppState>, session: Session, RoutePath(agent): RoutePath<String>,
+    payload: Result<Json<ConnectionTestInput>, JsonRejection>,
+) -> Result<Json<TestResult>, ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    auth::require_admin(&user)?;
+    let ConnectionTestInput { revision } = input(payload)?;
+    if revision.trim().is_empty() {
+        return Err(ApiError(ErrorCode::InvalidInput));
+    }
+    Ok(Json(state.catalog.test(&state.pool, &user, &agent, revision).await?))
+}
+
+async fn admin_agents(
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<Json<Items<AgentOnboardingItem>>, ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    Ok(Json(services::admin_agents(&state.pool, &user).await?))
+}
+
+async fn register_agent(
+    State(state): State<AppState>,
+    session: Session,
+    payload: Result<Json<AgentRegistration>, JsonRejection>,
+) -> Result<(StatusCode, Json<AgentOnboardingItem>), ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    auth::require_admin(&user)?;
+    Ok((StatusCode::CREATED, Json(services::register_agent(&state.pool, &user, input(payload)?).await?)))
+}
+
 async fn wiki_activity(
     State(state): State<AppState>,
     session: Session,

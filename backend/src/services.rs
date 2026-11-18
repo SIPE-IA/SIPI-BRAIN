@@ -126,6 +126,105 @@ pub async fn admin_wikis(pool: &SqlitePool, user: &User) -> Result<WikiAdminInde
     })
 }
 
+pub async fn admin_agents(
+    pool: &SqlitePool,
+    user: &User,
+) -> Result<Items<AgentOnboardingItem>, ApiError> {
+    let mut tx = pool.begin().await?;
+    access::admin_on(&mut tx, &user.id).await?;
+    let rows: Vec<AgentProjection> =
+        sqlx::query_as("SELECT a.id,a.name,a.active,c.destination_id,c.expected_identity,c.revision
+                       FROM agents a LEFT JOIN agent_connections c ON c.agent_id=a.id ORDER BY a.name,a.id")
+            .fetch_all(&mut *tx)
+            .await?;
+    tx.commit().await?;
+    Ok(Items {
+        items: rows.into_iter().map(|(id, name, active, destination, identity, revision)| {
+            let connection = destination.zip(identity).zip(revision).map(|((destination_id, expected_identity), revision)| {
+                ConnectionSummary { destination_id, expected_identity, revision }
+            });
+            AgentOnboardingItem { id, name, active, connection }
+        }).collect(),
+    })
+}
+
+type AgentProjection = (String, String, bool, Option<String>, Option<String>, Option<String>);
+
+pub async fn connection_config(
+    pool: &SqlitePool, user: &User, agent: &str,
+) -> Result<Option<ConnectionSummary>, ApiError> {
+    let mut tx = pool.begin().await?;
+    access::admin_on(&mut tx, &user.id).await?;
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM agents WHERE id=?)")
+        .bind(agent).fetch_one(&mut *tx).await?;
+    if !exists {
+        return Err(ApiError(ErrorCode::InvalidInput));
+    }
+    let config: Option<(String, String, String)> =
+        sqlx::query_as("SELECT destination_id,expected_identity,revision FROM agent_connections WHERE agent_id=?")
+            .bind(agent).fetch_optional(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(config.map(|(destination_id, expected_identity, revision)| ConnectionSummary { destination_id, expected_identity, revision }))
+}
+
+pub async fn save_connection(
+    pool: &SqlitePool, user: &User, agent: &str, config: ConnectionInput,
+) -> Result<ConnectionSummary, ApiError> {
+    text(&config.expected_identity)?;
+    db::write(pool, |conn| {
+        let (user, agent) = (user.id.clone(), agent.to_owned());
+        let (destination_id, expected_identity) = (config.destination_id.clone(), config.expected_identity.clone());
+        Box::pin(async move {
+            access::admin_on(conn, &user).await?;
+            let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM agents WHERE id=?)")
+                .bind(&agent).fetch_one(&mut *conn).await?;
+            if !exists {
+                return Err(ApiError(ErrorCode::InvalidInput));
+            }
+            let revision: String = sqlx::query_scalar(
+                "INSERT INTO agent_connections(agent_id,destination_id,expected_identity,revision)
+                 VALUES(?,?,?,?) ON CONFLICT(agent_id) DO UPDATE SET
+                   revision=CASE WHEN destination_id=excluded.destination_id
+                                  AND expected_identity=excluded.expected_identity
+                                 THEN revision ELSE excluded.revision END,
+                   destination_id=excluded.destination_id,expected_identity=excluded.expected_identity
+                 RETURNING revision")
+                .bind(agent).bind(&destination_id).bind(&expected_identity).bind(id())
+                .fetch_one(conn).await?;
+            Ok(ConnectionSummary { destination_id, expected_identity, revision })
+        })
+    }).await
+}
+
+pub async fn register_agent(
+    pool: &SqlitePool,
+    user: &User,
+    input: AgentRegistration,
+) -> Result<AgentOnboardingItem, ApiError> {
+    let id = input.id.trim();
+    let name = input.name.trim();
+    db::write(pool, |conn| {
+        let (id, name, user_id) = (id.to_owned(), name.to_owned(), user.id.clone());
+        Box::pin(async move {
+            access::admin_on(conn, &user_id).await?;
+            text(&id)?;
+            if matches!(id.as_str(), "." | "..") {
+                return Err(ApiError(ErrorCode::InvalidInput));
+            }
+            text(&name)?;
+            let result = sqlx::query("INSERT INTO agents(id,name) VALUES(?,?) ON CONFLICT(id) DO NOTHING")
+                .bind(&id)
+                .bind(&name)
+                .execute(conn)
+                .await?;
+            if result.rows_affected() == 0 {
+                return Err(ApiError(ErrorCode::AgentAlreadyExists));
+            }
+            Ok(AgentOnboardingItem { id, name, active: true, connection: None })
+        })
+    }).await
+}
+
 pub async fn wiki_activity(
     pool: &SqlitePool,
     user: &User,

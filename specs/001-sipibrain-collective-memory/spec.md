@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-16
 
-**Status**: Clarified — cinco aclaraciones integradas; listo para planificar el piloto con las dependencias y decisiones diferidas indicadas. No constituye aprobación para usar datos o secretos reales.
+**Status**: Publicado — cinco aclaraciones integradas; se mantienen las dependencias y decisiones diferidas del piloto. No constituye aprobación para usar datos o secretos reales.
 
 **Input**: Texto adjunto «1. Objetivo y contexto de negocio SIPI-brain será la memoria colectiva de los t…» y correcciones explícitas de la conversación. Fuente: `C:/Users/kfernandez/.codex/attachments/90019e8f-76f5-4288-9ea6-8188c50eb893/Texto pegado.txt`.
 

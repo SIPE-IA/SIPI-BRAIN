@@ -15,6 +15,7 @@ pub enum ErrorCode {
     NotFound,
     InvalidInput,
     WikiAlreadyExists,
+    AgentAlreadyExists,
     IdempotencyConflict,
     ConflictChanged,
     StorageBusy,
@@ -37,6 +38,9 @@ impl IntoResponse for ApiError {
             ErrorCode::InvalidInput => (StatusCode::BAD_REQUEST, "Invalid input."),
             ErrorCode::WikiAlreadyExists => {
                 (StatusCode::CONFLICT, "This agent already has a wiki.")
+            }
+            ErrorCode::AgentAlreadyExists => {
+                (StatusCode::CONFLICT, "This agent ID is already registered.")
             }
             ErrorCode::IdempotencyConflict => (
                 StatusCode::CONFLICT,
@@ -113,6 +117,41 @@ pub struct Wiki {
 pub struct AgentSummary {
     pub id: String,
     pub name: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentRegistration {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Serialize)]
+pub struct AgentOnboardingItem {
+    pub id: String,
+    pub name: String,
+    pub active: bool,
+    pub connection: Option<ConnectionSummary>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct ConnectionSummary {
+    pub destination_id: String,
+    pub expected_identity: String,
+    pub revision: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConnectionInput {
+    pub destination_id: String,
+    pub expected_identity: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConnectionTestInput {
+    pub revision: String,
 }
 
 #[derive(Serialize)]

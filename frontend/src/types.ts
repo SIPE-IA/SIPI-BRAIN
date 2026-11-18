@@ -145,3 +145,28 @@ export interface WikiCreateInput {
   name: string
   agent_id: string
 }
+export interface AgentRegistration {
+  id: string
+  name: string
+}
+
+export interface ConnectionSummary {
+  destination_id: string
+  expected_identity: string
+  revision: string
+}
+
+export interface ConnectionDestination {
+  id: string
+  label: string
+}
+
+export interface ConnectionResult {
+  revision: string
+  status: 'verified' | 'unreachable' | 'identity_unverified' | 'not_testable'
+}
+
+export interface AgentOnboardingItem extends AgentRegistration {
+  active: boolean
+  connection: ConnectionSummary | null
+}

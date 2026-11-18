@@ -65,6 +65,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Phase 0: Generate research.md (resolve all NEEDS CLARIFICATION)
    - Phase 1: Generate data-model.md, contracts/, quickstart.md
    - Re-evaluate Constitution Check post-design
+   - Keep the template's `AGENTS.md` maintenance item as the last step of the final implementation phase in every `plan.md`, even when adapting the phase structure. Record it as a future task; do not update `AGENTS.md` during planning.
 
 ## Mandatory Post-Execution Hooks
 

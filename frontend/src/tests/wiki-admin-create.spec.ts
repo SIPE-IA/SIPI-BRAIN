@@ -9,14 +9,17 @@ test('creation is administrator-only and confirms only a saved wiki', async () =
   let role = 'programmer'
   let failSave = true
   let failRefresh = false
+  let saved = false
   const fetchMock = vi.fn<typeof fetch>(async (path, init) => {
     if (path === '/api/session') return jsonResponse({ user: { id: 'u', username: 'user', role }, csrf_token: 'token' })
     if (path === '/api/wikis') return jsonResponse({ items: [] })
     if (path !== '/api/admin/wikis') throw new Error('Unexpected request')
-    if (init?.method !== 'POST') return failRefresh ? jsonResponse({}, 500) : jsonResponse({ items: [], eligible_agents: [agent] })
+    if (init?.method !== 'POST') return failRefresh ? jsonResponse({}, 500)
+      : jsonResponse({ items: saved ? [wiki] : [], eligible_agents: saved ? [] : [agent] })
     if (failSave) return jsonResponse({ code: 'wiki_already_exists' }, 409)
     expect(JSON.parse(String(init.body))).toEqual({ name: 'New Wiki', agent_id: 'eligible' })
     failRefresh = true
+    saved = true
     return jsonResponse(wiki, 201)
   })
   vi.stubGlobal('fetch', fetchMock)
@@ -47,4 +50,12 @@ test('creation is administrator-only and confirms only a saved wiki', async () =
   expect(admin.text()).toContain('could not refresh')
   expect(admin.get('#wiki-admin-create li').text()).toContain('New Wiki')
   admin.unmount()
+
+  failRefresh = false
+  const reloaded = mount(App)
+  await flushPromises()
+  await reloaded.get('button[aria-controls="wiki-admin-create"]').trigger('click')
+  await flushPromises()
+  expect(reloaded.get('#wiki-admin-create li').text()).toContain('New Wiki Eligible agent')
+  reloaded.unmount()
 })
