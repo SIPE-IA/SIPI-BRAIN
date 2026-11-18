@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-18
 
-**Status**: Draft
+**Status**: Publicado
 
 **Input**: User description: “Sí, agrega al panel de admin la opción de registrar un agente, crearle su wiki y probar la conexión desde la interfaz, sin tener que tocar el backend manualmente. pero esto seria una nueva spec verdad vamos a crear un spec segun la pantilla”
 

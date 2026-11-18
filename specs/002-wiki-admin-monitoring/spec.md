@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-17
 
-**Status**: Borrador listo para planificación
+**Status**: Publicado
 
 **Input**: Crear LLMwikis desde la interfaz administrativa y supervisar cómo se llenan, sin ampliar implícitamente el acceso a las memorias.
 
