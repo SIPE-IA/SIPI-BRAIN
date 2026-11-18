@@ -1,4 +1,6 @@
 import type {
+  AgentOnboardingItem, AgentRegistration,
+  ConnectionDestination, ConnectionResult, ConnectionSummary,
   AssignmentIndex, AssignmentInput, AssignmentResult, Conflict, Items, KnowledgeReview,
   KnowledgeReviewInput, LoginInput, MaintenanceInput, ProposalInput, ProposalResult,
   RecordDetail, RecordInput, RecordLink, RecordSummary, ResolutionInput, SessionState,
@@ -13,6 +15,7 @@ const errorMessages: Record<string, string> = {
   not_found: 'This resource is unavailable.',
   invalid_input: 'Check the required fields and associations.',
   wiki_already_exists: 'This agent already has a wiki.',
+  agent_already_exists: 'This agent ID is already registered.',
   idempotency_conflict: 'This submission ID was already used for different content.',
   conflict_changed: 'The conflict changed. Reload before deciding.',
   storage_busy: 'Not saved. Storage is busy; your text is retained for retry.',
@@ -31,12 +34,12 @@ export function errorMessage(error: unknown): string {
 export class ApiClient {
   private csrfToken = ''
 
-  private async request<T>(path: string, body?: unknown, successStatus?: number): Promise<T> {
+  private async request<T>(path: string, body?: unknown, successStatus?: number, method = body === undefined ? 'GET' : 'POST'): Promise<T> {
     if (body !== undefined && !this.csrfToken) await this.session()
     let response: Response
     try {
       response = await fetch(`/api${path}`, {
-        method: body === undefined ? 'GET' : 'POST',
+        method,
         credentials: 'same-origin',
         cache: 'no-store',
         headers: body === undefined ? {} : { 'Content-Type': 'application/json', 'X-CSRF-Token': this.csrfToken },
@@ -83,6 +86,30 @@ export class ApiClient {
 
   adminWikis(): Promise<WikiAdminIndex> {
     return this.request('/admin/wikis')
+  }
+
+  adminAgents(): Promise<Items<AgentOnboardingItem>> {
+    return this.request('/admin/agents')
+  }
+
+  connectionDestinations(): Promise<Items<ConnectionDestination>> {
+    return this.request('/admin/connection-destinations')
+  }
+
+  saveConnection(agent: string, input: Omit<ConnectionSummary, 'revision'>): Promise<ConnectionSummary> {
+    return this.request(`/admin/agents/${encodeURIComponent(agent)}/connection`, input, 200, 'PUT')
+  }
+
+  testConnection(agent: string, revision: string): Promise<ConnectionResult> {
+    return this.request(`/admin/agents/${encodeURIComponent(agent)}/connection/test`, { revision }, 200)
+  }
+
+  async registerAgent(input: AgentRegistration): Promise<AgentOnboardingItem> {
+    const agent = await this.request<AgentOnboardingItem>('/admin/agents', input, 201)
+    if (agent?.id !== input.id || typeof agent.name !== 'string' || !agent.name.trim() || agent.active !== true) {
+      throw new ApiError('invalid_response', 201)
+    }
+    return agent
   }
 
   wikiActivity(): Promise<Items<WikiActivitySummary>> {

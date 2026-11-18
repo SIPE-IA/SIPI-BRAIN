@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { type ApiClient, errorMessage } from '../api'
-import type { WikiAdminIndex } from '../types'
+import AgentConnectionForm from './AgentConnectionForm.vue'
+import type { AgentOnboardingItem, WikiAdminIndex } from '../types'
 
 const { api } = defineProps<{ api: ApiClient }>()
 const index = ref<WikiAdminIndex | null>(null)
@@ -12,16 +13,64 @@ const name = ref('')
 const agentId = ref('')
 const error = ref('')
 const confirmed = ref(false)
+const agents = ref<AgentOnboardingItem[]>([])
+const registerOpen = ref(false)
+const loadingAgents = ref(false)
+const registering = ref(false)
+const registered = ref(false)
+const registrationId = ref('')
+const registrationName = ref('')
+const registrationError = ref('')
+const connectionsOpen = ref(false)
+let wikiListRequest = 0
 
-async function load() {
+async function load(afterRegistration = false) {
+  const request = ++wikiListRequest
   loading.value = true
   error.value = ''
   try {
-    index.value = await api.adminWikis()
+    const list = await api.adminWikis()
+    if (request === wikiListRequest) index.value = list
   } catch (cause) {
-    error.value = confirmed.value ? 'Wiki saved, but could not refresh the list. Retry.' : errorMessage(cause)
+    if (request !== wikiListRequest) return
+    error.value = afterRegistration
+      ? 'Agent saved, but could not refresh the list. Retry.'
+      : confirmed.value ? 'Wiki saved, but could not refresh the list. Retry.' : errorMessage(cause)
   } finally {
-    loading.value = false
+    if (request === wikiListRequest) loading.value = false
+  }
+}
+
+async function openRegistration() {
+  registerOpen.value = !registerOpen.value
+  if (!registerOpen.value) return
+  registrationError.value = ''
+  loadingAgents.value = true
+  try {
+    agents.value = (await api.adminAgents()).items
+  } catch (cause) {
+    registrationError.value = errorMessage(cause)
+  } finally {
+    loadingAgents.value = false
+  }
+}
+
+async function register() {
+  if (loadingAgents.value || registering.value || !registrationId.value.trim() || !registrationName.value.trim()) return
+  registering.value = true
+  registered.value = false
+  registrationError.value = ''
+  try {
+    const agent = await api.registerAgent({ id: registrationId.value.trim(), name: registrationName.value.trim() })
+    agents.value = [...agents.value.filter(item => item.id !== agent.id), agent]
+    registered.value = true
+    registrationId.value = ''
+    registrationName.value = ''
+    await load(true)
+  } catch (cause) {
+    registrationError.value = errorMessage(cause)
+  } finally {
+    registering.value = false
   }
 }
 
@@ -49,7 +98,7 @@ async function create() {
   }
 }
 
-onMounted(load)
+onMounted(() => load())
 </script>
 
 <template>
@@ -58,7 +107,22 @@ onMounted(load)
     <p v-if="loading" role="status">Loading wikis…</p>
     <p v-if="confirmed" role="status">Wiki created.</p>
     <p v-if="error" role="alert" class="error">{{ error }}</p>
-    <button v-if="error && (!index || confirmed)" :disabled="loading || saving" @click="load">Retry list</button>
+    <button v-if="error && (!index || confirmed || registered)" :disabled="loading || saving || registering" @click="load(registered && !confirmed)">Retry list</button>
+    <button type="button" aria-controls="agent-register-form" :aria-expanded="registerOpen" :disabled="registering || loadingAgents" @click="openRegistration">Register agent</button>
+    <p v-if="registered" role="status">Agent registered.</p>
+    <p v-if="registrationError" role="alert" class="error">{{ registrationError }}</p>
+    <template v-if="registerOpen">
+      <form id="agent-register-form" @submit.prevent="register">
+        <label>Agent ID <input v-model="registrationId" name="agent-id" required :disabled="registering"></label>
+        <label>Agent name <input v-model="registrationName" name="agent-name" required :disabled="registering"></label>
+        <button type="submit" :disabled="registering || loadingAgents || !registrationId.trim() || !registrationName.trim()">Save agent</button>
+      </form>
+      <ul v-if="agents.length" class="wiki-list">
+        <li v-for="agent in agents" :key="agent.id">{{ agent.name }} <small>{{ agent.id }}</small></li>
+      </ul>
+    </template>
+    <button type="button" aria-controls="agent-connections" :aria-expanded="connectionsOpen" @click="connectionsOpen = !connectionsOpen">Configure connections</button>
+    <AgentConnectionForm v-if="connectionsOpen" :api="api" />
     <template v-if="index">
       <button type="button" aria-controls="wiki-create-form" :aria-expanded="showForm" :disabled="loading || saving || !index.eligible_agents.length" @click="showForm = !showForm">Create wiki</button>
       <p v-if="!index.eligible_agents.length" role="status">No eligible agents.</p>
