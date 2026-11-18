@@ -3,6 +3,7 @@ import type {
   KnowledgeReviewInput, LoginInput, MaintenanceInput, ProposalInput, ProposalResult,
   RecordDetail, RecordInput, RecordLink, RecordSummary, ResolutionInput, SessionState,
   Source, SourceInput, Wiki, WikiEvent, WikiMaintenance,
+  WikiActivitySummary, WikiAdminIndex, WikiAdminItem, WikiCreateInput,
 } from './types'
 
 const errorMessages: Record<string, string> = {
@@ -11,6 +12,7 @@ const errorMessages: Record<string, string> = {
   forbidden: 'You do not have permission for this action.',
   not_found: 'This resource is unavailable.',
   invalid_input: 'Check the required fields and associations.',
+  wiki_already_exists: 'This agent already has a wiki.',
   idempotency_conflict: 'This submission ID was already used for different content.',
   conflict_changed: 'The conflict changed. Reload before deciding.',
   storage_busy: 'Not saved. Storage is busy; your text is retained for retry.',
@@ -29,7 +31,7 @@ export function errorMessage(error: unknown): string {
 export class ApiClient {
   private csrfToken = ''
 
-  private async request<T>(path: string, body?: unknown): Promise<T> {
+  private async request<T>(path: string, body?: unknown, successStatus?: number): Promise<T> {
     if (body !== undefined && !this.csrfToken) await this.session()
     let response: Response
     try {
@@ -47,6 +49,9 @@ export class ApiClient {
       const error = await response.json().catch(() => null) as { code?: unknown } | null
       const code = typeof error?.code === 'string' && Object.hasOwn(errorMessages, error.code) ? error.code : 'request_failed'
       throw new ApiError(code, response.status, path === '/login' && response.status === 401 ? 'Sign in failed.' : undefined)
+    }
+    if (successStatus !== undefined && response.status !== successStatus) {
+      throw new ApiError('invalid_response', response.status)
     }
     try {
       return await response.json() as T
@@ -74,6 +79,23 @@ export class ApiClient {
 
   wikis(): Promise<Items<Wiki>> {
     return this.request('/wikis')
+  }
+
+  adminWikis(): Promise<WikiAdminIndex> {
+    return this.request('/admin/wikis')
+  }
+
+  wikiActivity(): Promise<Items<WikiActivitySummary>> {
+    return this.request('/admin/wiki-activity')
+  }
+
+  async createWiki(input: WikiCreateInput): Promise<WikiAdminItem> {
+    const wiki = await this.request<WikiAdminItem>('/admin/wikis', input, 201)
+    if (typeof wiki?.id !== 'string' || !wiki.id || typeof wiki.name !== 'string' || !wiki.name.trim()
+      || wiki.agent?.id !== input.agent_id || typeof wiki.agent.name !== 'string') {
+      throw new ApiError('invalid_response', 201)
+    }
+    return wiki
   }
 
   assignments(): Promise<AssignmentIndex> {

@@ -79,6 +79,8 @@ pub async fn application(
         )
         .route("/wikis/{wiki_id}/events", get(events))
         .route("/admin/assignments", get(assignments).post(set_assignment))
+        .route("/admin/wikis", get(admin_wikis).post(create_wiki))
+        .route("/admin/wiki-activity", get(wiki_activity))
         .fallback(not_found)
         .layer(middleware::from_fn_with_state(state.clone(), protect))
         .layer(sessions)
@@ -202,6 +204,32 @@ async fn assignments(
 ) -> Result<Json<Assignments>, ApiError> {
     let user = auth::require_user(&state.pool, &session).await?;
     Ok(Json(services::assignments(&state.pool, &user).await?))
+}
+async fn admin_wikis(
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<Json<WikiAdminIndex>, ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    Ok(Json(services::admin_wikis(&state.pool, &user).await?))
+}
+async fn wiki_activity(
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<Json<Items<WikiActivitySummary>>, ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    Ok(Json(services::wiki_activity(&state.pool, &user).await?))
+}
+async fn create_wiki(
+    State(state): State<AppState>,
+    session: Session,
+    payload: Result<Json<WikiCreateInput>, JsonRejection>,
+) -> Result<(StatusCode, Json<WikiAdminItem>), ApiError> {
+    let user = auth::require_user(&state.pool, &session).await?;
+    auth::require_admin(&user)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(services::create_wiki(&state.pool, &user, input(payload)?).await?),
+    ))
 }
 async fn set_assignment(
     State(state): State<AppState>,

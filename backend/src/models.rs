@@ -14,6 +14,7 @@ pub enum ErrorCode {
     Forbidden,
     NotFound,
     InvalidInput,
+    WikiAlreadyExists,
     IdempotencyConflict,
     ConflictChanged,
     StorageBusy,
@@ -34,6 +35,9 @@ impl IntoResponse for ApiError {
             ErrorCode::Forbidden => (StatusCode::FORBIDDEN, "Operation not permitted."),
             ErrorCode::NotFound => (StatusCode::NOT_FOUND, "Resource not found."),
             ErrorCode::InvalidInput => (StatusCode::BAD_REQUEST, "Invalid input."),
+            ErrorCode::WikiAlreadyExists => {
+                (StatusCode::CONFLICT, "This agent already has a wiki.")
+            }
             ErrorCode::IdempotencyConflict => (
                 StatusCode::CONFLICT,
                 "Submission ID already used for different input.",
@@ -103,6 +107,49 @@ pub struct Wiki {
     pub id: String,
     pub agent_id: String,
     pub name: String,
+}
+
+#[derive(Serialize)]
+pub struct AgentSummary {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Serialize)]
+pub struct WikiAdminItem {
+    pub id: String,
+    pub name: String,
+    pub agent: AgentSummary,
+}
+
+#[derive(Serialize)]
+pub struct WikiAdminIndex {
+    pub items: Vec<WikiAdminItem>,
+    pub eligible_agents: Vec<AgentSummary>,
+}
+
+#[derive(Serialize)]
+pub struct WikiActivitySummary {
+    #[serde(flatten)]
+    pub wiki: WikiAdminItem,
+    pub record_count: i64,
+    pub source_count: i64,
+    pub last_contribution_at: Option<String>,
+    pub recent_activity: Vec<WikiActivityEntry>,
+}
+
+#[derive(Serialize)]
+pub struct WikiActivityEntry {
+    pub occurred_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author_name: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WikiCreateInput {
+    pub name: String,
+    pub agent_id: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -118,3 +118,30 @@ export interface WikiEvent {
   reference_id: string
   created_at: string
 }
+export interface AgentSummary {
+  id: string
+  name: string
+}
+
+export interface WikiAdminItem {
+  id: string
+  name: string
+  agent: AgentSummary
+}
+
+export interface WikiAdminIndex {
+  items: WikiAdminItem[]
+  eligible_agents: AgentSummary[]
+}
+
+export interface WikiActivitySummary extends WikiAdminItem {
+  record_count: number
+  source_count: number
+  last_contribution_at: string | null
+  recent_activity: { occurred_at: string; author_name?: string }[]
+}
+
+export interface WikiCreateInput {
+  name: string
+  agent_id: string
+}
