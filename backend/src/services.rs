@@ -87,6 +87,134 @@ use serde::{Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 use sqlx::{Row, SqliteConnection, sqlite::SqliteRow};
 
+async fn admin_wiki_items(conn: &mut SqliteConnection) -> Result<Vec<WikiAdminItem>, ApiError> {
+    let rows: Vec<(String, String, String, String)> = sqlx::query_as(
+        "SELECT w.id,w.name,g.id,g.name FROM wikis w JOIN agents g ON g.id=w.agent_id ORDER BY w.name,w.id",
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, name, agent_id, agent_name)| WikiAdminItem {
+            id,
+            name,
+            agent: AgentSummary {
+                id: agent_id,
+                name: agent_name,
+            },
+        })
+        .collect())
+}
+
+pub async fn admin_wikis(pool: &SqlitePool, user: &User) -> Result<WikiAdminIndex, ApiError> {
+    let mut tx = pool.begin().await?;
+    access::admin_on(&mut tx, &user.id).await?;
+    let items = admin_wiki_items(&mut tx).await?;
+    let agents: Vec<(String, String)> = sqlx::query_as(
+        "SELECT g.id,g.name FROM agents g WHERE g.active=1
+         AND NOT EXISTS(SELECT 1 FROM wikis w WHERE w.agent_id=g.id) ORDER BY g.name,g.id",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(WikiAdminIndex {
+        items,
+        eligible_agents: agents
+            .into_iter()
+            .map(|(id, name)| AgentSummary { id, name })
+            .collect(),
+    })
+}
+
+pub async fn wiki_activity(
+    pool: &SqlitePool,
+    user: &User,
+) -> Result<Items<WikiActivitySummary>, ApiError> {
+    let mut tx = pool.begin().await?;
+    access::admin_on(&mut tx, &user.id).await?;
+    let wikis = admin_wiki_items(&mut tx).await?;
+    let mut items = Vec::with_capacity(wikis.len());
+    for wiki in wikis {
+        let can_read = match access::assignment_on(&mut tx, &user.id, &wiki.id).await {
+            Ok(()) => true,
+            Err(ApiError(ErrorCode::NotFound)) => false,
+            Err(error) => return Err(error),
+        };
+        let (record_count, source_count): (i64, i64) = sqlx::query_as(
+            "SELECT (SELECT count(*) FROM records WHERE wiki_id=?),
+                    (SELECT count(*) FROM original_sources WHERE wiki_id=?)",
+        )
+        .bind(&wiki.id)
+        .bind(&wiki.id)
+        .fetch_one(&mut *tx)
+        .await?;
+        // db::now writes UTC; removing Z orders whole seconds before their fractional parts.
+        let events: Vec<(String, Option<String>)> = sqlx::query_as(
+            "SELECT e.created_at, CASE WHEN ? THEN u.username END
+             FROM wiki_events e JOIN users u ON u.id=e.actor_id
+             WHERE e.wiki_id=? AND e.action IN
+               ('record_created','source_created','revision_saved','proposal_pending','conflict_resolved')
+             ORDER BY rtrim(e.created_at,'Z') DESC,e.sequence DESC LIMIT 10",
+        )
+        .bind(can_read)
+        .bind(&wiki.id)
+        .fetch_all(&mut *tx)
+        .await?;
+        items.push(WikiActivitySummary {
+            wiki,
+            record_count,
+            source_count,
+            last_contribution_at: events.first().map(|(date, _)| date.clone()),
+            recent_activity: events
+                .into_iter()
+                .map(|(occurred_at, author_name)| WikiActivityEntry {
+                    occurred_at,
+                    author_name,
+                })
+                .collect(),
+        });
+    }
+    tx.commit().await?;
+    Ok(Items { items })
+}
+
+pub async fn create_wiki(
+    pool: &SqlitePool,
+    user: &User,
+    input: WikiCreateInput,
+) -> Result<WikiAdminItem, ApiError> {
+    auth::require_admin(user)?;
+    let user_id = &user.id;
+    let name = input.name.trim();
+    let agent_id = input.agent_id.as_str();
+    let wiki_id = id();
+    db::write(pool, |conn| {
+        let wiki_id = wiki_id.clone();
+        let user_id = user_id.clone();
+        let name = name.to_owned();
+        let agent_id = agent_id.to_owned();
+        Box::pin(async move {
+            access::admin_on(conn, &user_id).await?;
+            text(&name)?;
+            let agent_name: String = sqlx::query_scalar("SELECT name FROM agents WHERE id=? AND active=1")
+                .bind(&agent_id)
+                .fetch_optional(&mut *conn)
+                .await?
+                .ok_or(ApiError(ErrorCode::InvalidInput))?;
+            let result = sqlx::query("INSERT INTO wikis(id,agent_id,name) VALUES(?,?,?) ON CONFLICT(agent_id) DO NOTHING")
+                .bind(&wiki_id)
+                .bind(&agent_id)
+                .bind(&name)
+                .execute(conn)
+                .await?;
+            if result.rows_affected() == 0 {
+                return Err(ApiError(ErrorCode::WikiAlreadyExists));
+            }
+            Ok(WikiAdminItem { id: wiki_id, name, agent: AgentSummary { id: agent_id, name: agent_name } })
+        })
+    }).await
+}
+
 fn id() -> String {
     uuid::Uuid::new_v4().to_string()
 }

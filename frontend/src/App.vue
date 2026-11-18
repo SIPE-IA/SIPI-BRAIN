@@ -4,6 +4,8 @@ import { ApiClient, errorMessage } from './api'
 import type { LoginInput, SessionState, Wiki } from './types'
 import AssignmentsView from './views/AssignmentsView.vue'
 import LoginView from './views/LoginView.vue'
+import WikiAdminActivityView from './views/WikiAdminActivityView.vue'
+import WikiAdminCreateView from './views/WikiAdminCreateView.vue'
 import WikiView from './views/WikiView.vue'
 
 const api = new ApiClient()
@@ -12,7 +14,7 @@ const wikis = ref<Wiki[]>([])
 const loading = ref(true)
 const busy = ref(false)
 const error = ref('')
-const showAssignments = ref(false)
+const panel = ref<'assignments' | 'create' | 'activity' | null>(null)
 const selectedWiki = ref<Wiki | null>(null)
 
 async function loadWikis() {
@@ -52,7 +54,7 @@ async function logout() {
   try {
     state.value = await api.logout()
     wikis.value = []
-    showAssignments.value = false
+    panel.value = null
     selectedWiki.value = null
   } catch (cause) {
     error.value = errorMessage(cause)
@@ -85,10 +87,16 @@ onMounted(initialize)
         <LoginView v-else-if="!state.user" :busy="busy" @submit="login" />
         <template v-else>
           <nav aria-label="Workspace">
-            <button :aria-pressed="!showAssignments && !selectedWiki" @click="showAssignments = false; selectedWiki = null; loadWikis().catch(cause => error = errorMessage(cause))">My wikis</button>
-            <button v-if="state.user.role === 'admin'" :aria-pressed="showAssignments" @click="showAssignments = true">Manage assignments</button>
+            <button :aria-pressed="!panel && !selectedWiki" @click="panel = null; selectedWiki = null; loadWikis().catch(cause => error = errorMessage(cause))">My wikis</button>
+            <template v-if="state.user.role === 'admin'">
+              <button :aria-pressed="panel === 'assignments'" @click="panel = 'assignments'">Manage assignments</button>
+              <button :aria-pressed="panel === 'create'" aria-controls="wiki-admin-create" @click="panel = 'create'">Manage wikis</button>
+              <button :aria-pressed="panel === 'activity'" aria-controls="wiki-admin-activity" @click="panel = 'activity'">Wiki activity</button>
+            </template>
           </nav>
-          <AssignmentsView v-if="showAssignments && state.user.role === 'admin'" :api="api" />
+          <AssignmentsView v-if="panel === 'assignments' && state.user.role === 'admin'" :api="api" />
+          <WikiAdminCreateView v-else-if="panel === 'create' && state.user.role === 'admin'" :api="api" />
+          <WikiAdminActivityView v-else-if="panel === 'activity' && state.user.role === 'admin'" :api="api" />
           <WikiView v-else-if="selectedWiki" :key="selectedWiki.id" :api="api" :wiki="selectedWiki" :user="state.user" />
           <section v-else aria-labelledby="wiki-heading">
             <h2 id="wiki-heading">Assigned wikis</h2>
