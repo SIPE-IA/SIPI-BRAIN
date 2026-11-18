@@ -24,4 +24,15 @@ specs/001-sipibrain-collective-memory/tasks.md; no presentar tareas pendientes c
 - Verificar cambios con pruebas y declarar comprobaciones pendientes.
 - Commits convencionales, sin atribución a IA; Makefiles con targets canónicos y alias universales.
 
+## Cierre de una feature
+
+Solo cuando el usuario pida explícitamente «cerrar la feature», ejecutar en este orden:
+
+1. Revisar `git status`. Si hay cambios pendientes de la feature, hacer los commits correspondientes y confirmar que el árbol de trabajo quede limpio. Si quedan cambios ajenos, detenerse sin incluirlos.
+2. Ejecutar las pruebas del proyecto. Si alguna falla o no se puede ejecutar, detenerse antes de cambiar de rama.
+3. Guardar el nombre de la rama de la feature y ejecutar `git checkout main`. Si `main` no existe localmente, detenerse sin sustituirla por otra rama.
+4. Ejecutar `git merge --no-ff -m "merge feature NNN:<nombre>" <rama-feature>`, sustituyendo `NNN` y `<nombre>` por los valores de la feature. Este mensaje es la excepción al formato de commits convencionales. Si el merge falla, no borrar la rama.
+5. Borrar solo la rama local de la feature con `git branch -d <rama-feature>`, sin forzar.
+6. Mostrar la salida de `git log --oneline --graph -10`. No hacer push como parte del cierre.
+
 Las reglas de producto viven en .specify/memory/constitution.md y el estado del producto en specs/README.md
